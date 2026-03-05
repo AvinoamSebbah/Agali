@@ -299,19 +299,31 @@ jobs:
           path: dumps/
         continue-on-error: true   # Si aucun fichier scrappé, on continue sans planter
 
+      # ── Diagnostic : lister le contenu des dumps téléchargés ──────────────
+      - name: 🔍 Debug dump folder
+        if: steps.check.outputs.should_run == 'true'
+        run: |
+          echo "=== Contenu de dumps/ ==="
+          find dumps/ -type f 2>/dev/null | head -30 || echo "(dumps/ vide ou inexistant)"
+          echo "=== Dossiers dans dumps/ ==="
+          ls -la dumps/ 2>/dev/null || echo "(pas de dossier dumps/)"
+
       # ── Import en BDD ────────────────────────────────────────────
       - name: 🗄️ Import ${{ matrix.scraper }} to database
         if: steps.check.outputs.should_run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          # Vérifier si des fichiers existent à importer
-          if [ ! -d "dumps/${{ matrix.scraper }}" ] || [ -z "$(ls dumps/${{ matrix.scraper }}/*.xml 2>/dev/null)" ]; then
-            echo "⏭️ No XML files found for ${{ matrix.scraper }}, skipping import"
+          # Vérifier si des fichiers XML existent quelque part dans dumps/
+          # NOTE: le dossier du magasin a la casse du scraper Python (ex: "Bareket" pas "BAREKET")
+          # On cherche donc TOUS les XML dans dumps/ sans filtrer sur le nom exact
+          XML_COUNT=$(find dumps/ -name "*.xml" 2>/dev/null | wc -l)
+          if [ "$XML_COUNT" -eq 0 ]; then
+            echo "⏭️ No XML files found in dumps/ for ${{ matrix.scraper }}, skipping import"
             exit 0
           fi
 
-          echo "📥 Importing ${{ matrix.scraper }}: $(date)"
+          echo "📅 Found $XML_COUNT XML files - Importing ${{ matrix.scraper }}: $(date)"
           
           # Détermine quels types importer selon le mode
           MODE="${{ inputs.mode || 'all' }}"
@@ -330,7 +342,9 @@ jobs:
           esac
 
           echo "📋 Importing types: $TYPES"
-          python import_xml_to_db.py $TYPES --stores "${{ matrix.scraper }}" --workers 8
+          # PAS de --stores filter : chaque VM a déjà uniquement les fichiers de son magasin
+          # Le filtre --stores causerait un problème de casse (BAREKET vs Bareket)
+          python import_xml_to_db.py $TYPES --workers 8
           echo "✅ Import done for ${{ matrix.scraper }}: $(date)"
 
       - name: 📊 Import summary
