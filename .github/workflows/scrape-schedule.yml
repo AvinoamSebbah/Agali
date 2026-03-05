@@ -1,51 +1,210 @@
-name: 🕐 Scrape - Every 12h
+name: 🕐 Scrape & Import - Every 12h
 
 on:
   schedule:
-    # Toutes les 12h : 06h00 et 18h00 UTC (= 08h00 et 20h00 Israel)
+    # 06h00 et 18h00 UTC (= 08h00 et 20h00 heure Israël)
     - cron: '0 6,18 * * *'
   workflow_dispatch:
     inputs:
-      ALL_SCRAPERS:
-        description: '✔️ Scraper TOUS les magasins'
-        type: boolean
-        default: true
-      CUSTOM_SCRAPERS:
-        description: '🎯 Magasins spécifiques si non TOUS (ex: COFIX,BAREKET)'
-        type: string
-        default: 'COFIX'
-      ALL_FILE_TYPES:
-        description: '✔️ Tous les types de fichiers'
-        type: boolean
-        default: true
-      CUSTOM_FILE_TYPES:
-        description: '📄 Types spécifiques si non TOUS (ex: STORE_FILE,PRICE_FULL_FILE)'
-        type: string
-        default: 'STORE_FILE,PRICE_FULL_FILE'
-      LIMIT:
-        description: '⚡ Limite de fichiers par magasin (vide = TOUT)'
+      mode:
+        description: '🎯 Mode de lancement'
+        type: choice
+        required: true
+        default: 'all'
+        options:
+          - 'all'           # Tout scraper + tout importer
+          - 'stores_only'   # Uniquement les magasins (rapide, ~5min)
+          - 'prices_only'   # Prix seulement (PRICE_FILE + PRICE_FULL_FILE)
+          - 'promos_only'   # Promos seulement (PROMO_FILE + PROMO_FULL_FILE)
+          - 'custom'        # Paramètres personnalisés ci-dessous
+      scrapers:
+        description: '🏪 [custom] Magasins (ex: COFIX,BAREKET - vide=TOUS)'
         type: string
         default: ''
-      SCRAPE_ONLY:
-        description: '🔄 Scraper uniquement (sans importer en BDD)'
-        type: boolean
-        default: false
-      IMPORT_ONLY:
-        description: '📥 Importer uniquement (sans scraper de nouveaux fichiers)'
+      file_types:
+        description: '📄 [custom] Types (STORE_FILE,PRICE_FILE,PRICE_FULL_FILE,PROMO_FILE,PROMO_FULL_FILE - vide=TOUS)'
+        type: string
+        default: ''
+      limit:
+        description: '⚡ [custom] Limite fichiers par magasin (vide=TOUT)'
+        type: string
+        default: ''
+      skip_import:
+        description: '⏩ Scraper uniquement, ne pas importer en BDD'
         type: boolean
         default: false
 
-# ═══════════════════════════════════════════
-# JOB 1: SCRAPING (télécharge les fichiers XML)
-# ═══════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
+# JOB 1 : SCRAPING (35 jobs parallèles, 1 par magasin × file_type)
+# ════════════════════════════════════════════════════════════════
 jobs:
   scrape:
-    name: 🌐 Scrape (${{ matrix.scraper }})
+    name: 🌐 ${{ matrix.scraper }} / ${{ matrix.file_type }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6h max (limite GitHub absolue)
+    timeout-minutes: 360  # 6h max (limite absolue GitHub)
+    strategy:
+      fail-fast: false     # Si 1 magasin plante, les autres continuent
+      matrix:
+        scraper:
+          - BAREKET
+          - YAYNO_BITAN_AND_CARREFOUR
+          - COFIX
+          - CITY_MARKET_KIRYATGAT
+          - CITY_MARKET_SHOPS
+          - DOR_ALON
+          - GOOD_PHARM
+          - HAZI_HINAM
+          - HET_COHEN
+          - KESHET
+          - KING_STORE
+          - MAAYAN_2000
+          - MAHSANI_ASHUK
+          - NETIV_HASED
+          - MESHMAT_YOSEF_1
+          - MESHMAT_YOSEF_2
+          - OSHER_AD
+          - POLIZER
+          - RAMI_LEVY
+          - SALACH_DABACH
+          - SHEFA_BARCART_ASHEM
+          - SHUFERSAL
+          - SHUK_AHIR
+          - STOP_MARKET
+          - SUPER_PHARM
+          - SUPER_YUDA
+          - SUPER_SAPIR
+          - FRESH_MARKET_AND_SUPER_DOSH
+          - QUIK
+          - TIV_TAAM
+          - VICTORY
+          - YELLOW
+          - YOHANANOF
+          - ZOL_VEBEGADOL
+          - WOLT
+        file_type:
+          - STORE_FILE
+          - PRICE_FILE
+          - PRICE_FULL_FILE
+          - PROMO_FILE
+          - PROMO_FULL_FILE
+
+    steps:
+      # ── Calcul du filtre selon le mode ──────────────────────────
+      - name: 🧮 Compute filters
+        id: filters
+        run: |
+          MODE="${{ inputs.mode || 'all' }}"
+          SCRAPER="${{ matrix.scraper }}"
+          FILE_TYPE="${{ matrix.file_type }}"
+
+          # ── Vérifier si ce (scraper, file_type) doit tourner ────
+          SHOULD_RUN="true"
+
+          case "$MODE" in
+            stores_only)
+              [[ "$FILE_TYPE" != "STORE_FILE" ]] && SHOULD_RUN="false"
+              ;;
+            prices_only)
+              [[ "$FILE_TYPE" != "PRICE_FILE" && "$FILE_TYPE" != "PRICE_FULL_FILE" ]] && SHOULD_RUN="false"
+              ;;
+            promos_only)
+              [[ "$FILE_TYPE" != "PROMO_FILE" && "$FILE_TYPE" != "PROMO_FULL_FILE" ]] && SHOULD_RUN="false"
+              ;;
+            custom)
+              # Filtre scrapers
+              CUSTOM_SCRAPERS="${{ inputs.scrapers }}"
+              if [[ -n "$CUSTOM_SCRAPERS" ]]; then
+                if ! echo ",$CUSTOM_SCRAPERS," | grep -q ",$SCRAPER,"; then
+                  SHOULD_RUN="false"
+                fi
+              fi
+              # Filtre file_types
+              CUSTOM_FILE_TYPES="${{ inputs.file_types }}"
+              if [[ -n "$CUSTOM_FILE_TYPES" && "$SHOULD_RUN" == "true" ]]; then
+                if ! echo ",$CUSTOM_FILE_TYPES," | grep -q ",$FILE_TYPE,"; then
+                  SHOULD_RUN="false"
+                fi
+              fi
+              ;;
+            all)
+              SHOULD_RUN="true"
+              ;;
+          esac
+
+          echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "ℹ️ [$SCRAPER / $FILE_TYPE] mode=$MODE → should_run=$SHOULD_RUN"
+
+      # ── Setup (seulement si on doit tourner) ────────────────────
+      - name: 📥 Checkout
+        if: steps.filters.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: 🐍 Python 3.11
+        if: steps.filters.outputs.should_run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        if: steps.filters.outputs.should_run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔧 Setup .env
+        if: steps.filters.outputs.should_run == 'true'
+        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+
+      - name: 🔄 Prisma generate
+        if: steps.filters.outputs.should_run == 'true'
+        run: python -m prisma generate
+
+      # ── Scraping ─────────────────────────────────────────────────
+      - name: 🚀 Scrape ${{ matrix.scraper }} / ${{ matrix.file_type }}
+        if: steps.filters.outputs.should_run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ENABLED_SCRAPERS: ${{ matrix.scraper }}
+          ENABLED_FILE_TYPES: ${{ matrix.file_type }}
+          NUMBER_OF_PROCESSES: "1"   # 1 process car déjà 1 job par magasin
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          echo "🕐 Scraping [${{ matrix.scraper }}/${{ matrix.file_type }}]: $(date)"
+          python main.py
+          echo "✅ Done: $(date)"
+
+      # ── Résumé du dossier téléchargé ────────────────────────────
+      - name: 📊 Files summary
+        if: steps.filters.outputs.should_run == 'true'
+        run: |
+          echo "📁 Files downloaded for ${{ matrix.scraper }}:"
+          find dumps/${{ matrix.scraper }} -type f 2>/dev/null | wc -l | xargs echo "  Total files:"
+          du -sh dumps/${{ matrix.scraper }} 2>/dev/null || echo "  (folder empty or not found)"
+
+      # ── Upload des fichiers téléchargés comme artifact ───────────
+      # Permet au job import de les récupérer
+      - name: 📤 Upload dumps artifact
+        if: steps.filters.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dumps-${{ matrix.scraper }}-${{ matrix.file_type }}
+          path: dumps/
+          retention-days: 1   # Supprimé après 1 jour (on a besoin que pour le job import)
+          if-no-files-found: ignore
+
+# ════════════════════════════════════════════════════════════════
+# JOB 2 : IMPORT par magasin (35 jobs parallèles)
+# Commence seulement quand TOUS les scrapes sont terminés
+# ════════════════════════════════════════════════════════════════
+  import:
+    name: 🗄️ Import ${{ matrix.scraper }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2h max par magasin
+    needs: scrape         # Attend la fin de TOUS les scrapes
+    if: always() && inputs.skip_import != true && (github.event_name == 'schedule' || inputs.skip_import != 'true')
     strategy:
       fail-fast: false
-      max-parallel: 20  # GitHub limite à 20 jobs simultanés
       matrix:
         scraper:
           - BAREKET
@@ -85,120 +244,95 @@ jobs:
           - WOLT
 
     steps:
-      - name: 🚫 Skip check
+      # ── Vérifier si on doit importer ce magasin ─────────────────
+      - name: 🧮 Check if should import
         id: check
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.IMPORT_ONLY }}" = "true" ]; then
-              echo "skip=true" >> $GITHUB_OUTPUT
-              echo "⏭️ IMPORT_ONLY mode: skipping scrape"
-              exit 0
-            fi
-            if [ "${{ inputs.ALL_SCRAPERS }}" != "true" ] && ! echo "${{ inputs.CUSTOM_SCRAPERS }}" | tr ',' '\n' | tr -d ' ' | grep -qx "${{ matrix.scraper }}"; then
-              echo "skip=true" >> $GITHUB_OUTPUT
-              echo "⏭️ Skipping ${{ matrix.scraper }} (not in selection)"
-              exit 0
+          MODE="${{ inputs.mode || 'all' }}"
+          SCRAPER="${{ matrix.scraper }}"
+          SHOULD_RUN="true"
+
+          if [[ "$MODE" == "custom" ]]; then
+            CUSTOM_SCRAPERS="${{ inputs.scrapers }}"
+            if [[ -n "$CUSTOM_SCRAPERS" ]]; then
+              if ! echo ",$CUSTOM_SCRAPERS," | grep -q ",$SCRAPER,"; then
+                SHOULD_RUN="false"
+              fi
             fi
           fi
-          echo "skip=false" >> $GITHUB_OUTPUT
 
-      - name: 📥 Checkout code
-        if: steps.check.outputs.skip != 'true'
+          echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "ℹ️ [$SCRAPER] import should_run=$SHOULD_RUN"
+
+      - name: 📥 Checkout
+        if: steps.check.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python 3.11
-        if: steps.check.outputs.skip != 'true'
+      - name: 🐍 Python 3.11
+        if: steps.check.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: 📦 Install dependencies
-        if: steps.check.outputs.skip != 'true'
+        if: steps.check.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🔧 Create .env file
-        if: steps.check.outputs.skip != 'true'
+      - name: 🔧 Setup .env
+        if: steps.check.outputs.should_run == 'true'
         run: echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
 
-      - name: 🔄 Generate Prisma client
-        if: steps.check.outputs.skip != 'true'
+      - name: 🔄 Prisma generate
+        if: steps.check.outputs.should_run == 'true'
         run: python -m prisma generate
 
-      - name: 🚀 Scrape ${{ matrix.scraper }}
-        if: steps.check.outputs.skip != 'true'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ENABLED_SCRAPERS: ${{ matrix.scraper }}
-          NUMBER_OF_PROCESSES: "2"
-          LIMIT: ${{ inputs.LIMIT }}
-        run: |
-          # Appliquer les file types seulement si pas ALL_FILE_TYPES
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.ALL_FILE_TYPES }}" != "true" ]; then
-            export ENABLED_FILE_TYPES="${{ inputs.CUSTOM_FILE_TYPES }}"
-          fi
-          echo "🕐 Démarrage du scraping [${{ matrix.scraper }}]: $(date)"
-          python main.py
-          echo "✅ Scraping terminé [${{ matrix.scraper }}]: $(date)"
-
-# ═══════════════════════════════════════════
-# JOB 2: IMPORT (charge en BDD)
-# Se lance APRÈS que TOUS les scrapes soient terminés
-# ═══════════════════════════════════════════
-  import:
-    name: 🗄️ Import to DB
-    runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6h max
-    needs: scrape # Attend la fin de TOUS les scrapes
-    if: always() # Lance l'import même si certains scrapes ont échoué
-
-    steps:
-      - name: 🚫 Skip check
-        id: check
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.SCRAPE_ONLY }}" = "true" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "⏭️ SCRAPE_ONLY mode: skipping import"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 📥 Checkout code
-        if: steps.check.outputs.skip != 'true'
-        uses: actions/checkout@v4
-
-      - name: 🐍 Set up Python 3.11
-        if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-python@v5
+      # ── Télécharger tous les artifacts pour CE magasin ──────────
+      - name: 📥 Download dumps for ${{ matrix.scraper }}
+        if: steps.check.outputs.should_run == 'true'
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          pattern: dumps-${{ matrix.scraper }}-*
+          merge-multiple: true     # Fusionne tous les types de fichiers du même magasin
+          path: dumps/
+        continue-on-error: true   # Si aucun fichier scrappé, on continue sans planter
 
-      - name: 📦 Install dependencies
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 🔧 Create .env file
-        if: steps.check.outputs.skip != 'true'
-        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
-
-      - name: 🔄 Generate Prisma client
-        if: steps.check.outputs.skip != 'true'
-        run: python -m prisma generate
-
-      - name: 🗄️ Import all data to database
-        if: steps.check.outputs.skip != 'true'
+      # ── Import en BDD ────────────────────────────────────────────
+      - name: 🗄️ Import ${{ matrix.scraper }} to database
+        if: steps.check.outputs.should_run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          echo "📥 Démarrage de l'import complet: $(date)"
-          python import_xml_to_db.py stores promo price --workers 8
-          echo "✅ Import terminé: $(date)"
+          # Vérifier si des fichiers existent à importer
+          if [ ! -d "dumps/${{ matrix.scraper }}" ] || [ -z "$(ls dumps/${{ matrix.scraper }}/*.xml 2>/dev/null)" ]; then
+            echo "⏭️ No XML files found for ${{ matrix.scraper }}, skipping import"
+            exit 0
+          fi
 
-      - name: 📊 Summary
-        if: always()
-        run: echo "🏁 Pipeline terminé à $(date)"
+          echo "📥 Importing ${{ matrix.scraper }}: $(date)"
+          
+          # Détermine quels types importer selon le mode
+          MODE="${{ inputs.mode || 'all' }}"
+          case "$MODE" in
+            stores_only) TYPES="stores";;
+            prices_only) TYPES="price";;
+            promos_only) TYPES="promo";;
+            custom)
+              TYPES=""
+              FTYPES="${{ inputs.file_types }}"
+              if [[ -z "$FTYPES" || "$FTYPES" == *"STORE_FILE"* ]]; then TYPES="$TYPES stores"; fi
+              if [[ -z "$FTYPES" || "$FTYPES" == *"PRICE"* ]]; then TYPES="$TYPES price"; fi
+              if [[ -z "$FTYPES" || "$FTYPES" == *"PROMO"* ]]; then TYPES="$TYPES promo"; fi
+              ;;
+            *) TYPES="stores promo price";;
+          esac
+
+          echo "📋 Importing types: $TYPES"
+          python import_xml_to_db.py $TYPES --stores "${{ matrix.scraper }}" --workers 8
+          echo "✅ Import done for ${{ matrix.scraper }}: $(date)"
+
+      - name: 📊 Import summary
+        if: always() && steps.check.outputs.should_run == 'true'
+        run: echo "🏁 ${{ matrix.scraper }} import finished at $(date)"
