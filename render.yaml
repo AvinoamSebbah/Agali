@@ -1,0 +1,22 @@
+services:
+  # Backend Node.js / Express
+  - type: web
+    name: agali-backend
+    runtime: node
+    rootDir: web-backend
+    buildCommand: npm install && npm run build && npx prisma generate
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # À définir manuellement dans le dashboard Render
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PORT
+        value: 3001
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health

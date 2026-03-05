@@ -1,0 +1,64 @@
+name: 🧹 Cleanup DB - Every 24h
+
+on:
+  schedule:
+    # Tous les jours à 03h00 UTC (= 05h00 Israel) - heure creuse
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Permet de lancer manuellement depuis GitHub UI
+
+jobs:
+  cleanup:
+    name: 🗑️ Clean Expired Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # 1h max
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔧 Create .env file
+        run: |
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+
+      - name: 🔄 Generate Prisma client
+        run: |
+          python -m prisma generate
+
+      - name: 🧹 Run Cleanup (NO dry-run = vraie suppression)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "🧹 Démarrage du nettoyage: $(date)"
+          # --execute = mode réel (pas dry-run). Le script n'a pas de prompt en mode CI
+          python -c "
+          import asyncio
+          import sys
+          sys.argv = ['cleanup', '--execute']
+          
+          # Patcher pour éviter le prompt interactif en CI
+          import builtins
+          builtins.input = lambda _: 'oui'
+          
+          from safe_database_cleanup import main
+          exit_code = asyncio.run(main())
+          sys.exit(exit_code)
+          "
+          echo "✅ Nettoyage terminé: $(date)"
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          echo "=== Cleanup Job Summary ==="
+          echo "Date: $(date)"
+          echo "Status: ${{ job.status }}"

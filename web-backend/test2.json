@@ -1,0 +1,628 @@
+{
+  "stores": [
+    {
+      "storeId": 1594,
+      "storeName": "רב מכר",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1593,
+      "storeName": "רמות",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1602,
+      "storeName": "גבעת שאול",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1591,
+      "storeName": "תלפיות",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1609,
+      "storeName": "כנפי נשרים",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1592,
+      "storeName": "בזק מחסני מזון",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2477,
+      "storeName": "יש חסד בית וגן",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2559,
+      "storeName": "יש חסד כנפי נשרים",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2676,
+      "storeName": "יש חסד ירושלים-קרית שאול",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2721,
+      "storeName": "יש חסד ירושלים- רמת שלמה",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 11.8,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.8,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3431,
+      "storeName": "רמות עליית נוער",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3435,
+      "storeName": "הפסגה 39 החדש",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3437,
+      "storeName": "הרב קוק",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3439,
+      "storeName": "בית וגן חכמי",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3443,
+      "storeName": "פסגת זאב הגדול",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3445,
+      "storeName": "הפסגה 16",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3447,
+      "storeName": "הר נוף",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3449,
+      "storeName": "פ.זאב מרידור",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3451,
+      "storeName": "קרית יובל",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3453,
+      "storeName": "מחנה יהודה",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3463,
+      "storeName": "רמות לואי ליפסקי",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3465,
+      "storeName": "רמות ב'",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3469,
+      "storeName": "ניות- הרצוג",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3473,
+      "storeName": "נביאים",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3481,
+      "storeName": "כל זול בר אילן",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3483,
+      "storeName": "אוהלי יוסף",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3485,
+      "storeName": "הפלמח 38",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3487,
+      "storeName": "עוזיאל  111",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3491,
+      "storeName": "יפו 212",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3493,
+      "storeName": "ארץ חפץ",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3495,
+      "storeName": "קליינמן",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3497,
+      "storeName": "נווה יעקב",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 3499,
+      "storeName": "פסגת זאב",
+      "chainName": "זול ובגדול בע\"מ",
+      "city": "ירושלים",
+      "totalPrice": 11.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 11.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2540,
+      "storeName": "דיל ירושלים- פסגת זאב",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 12.3,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 12.3,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2620,
+      "storeName": "דיל ירושלים- גילה",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 12.3,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 12.3,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2658,
+      "storeName": "דיל צומת גבעת מרדכי",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 12.3,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 12.3,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2720,
+      "storeName": "דיל ירושלים-קניון תלפיות",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 12.3,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 12.3,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 2811,
+      "storeName": "גוד מרקט רש\"י ירושלים",
+      "chainName": "שופרסל",
+      "city": "ירושלים",
+      "totalPrice": 12.9,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 12.9,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    },
+    {
+      "storeId": 1682,
+      "storeName": "בית הפירות פסגת זאב",
+      "chainName": "רמי לוי שיווק השקמה",
+      "city": "ירושלים",
+      "totalPrice": 13.7,
+      "items": [
+        {
+          "itemCode": "7290110579319",
+          "itemName": "חומוס גלילי 400 גרם",
+          "price": 13.7,
+          "quantity": 1,
+          "hasPromo": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cart body -->
+  <defs>
+    <linearGradient id="cartGradient" x1="0" y1="0" x2="120" y2="120">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Cart basket -->
+  <rect x="25" y="35" width="55" height="45" rx="5" fill="url(#cartGradient)" stroke="#2563EB" stroke-width="2"/>
+  
+  <!-- Cart handle -->
+  <path d="M 30 35 Q 30 20 45 20 L 60 20 Q 75 20 75 35" stroke="#2563EB" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Cute face -->
+  <!-- Left eye -->
+  <circle cx="40" cy="50" r="5" fill="white"/>
+  <circle cx="42" cy="49" r="3" fill="#1e293b"/>
+  <circle cx="43" cy="48" r="1.5" fill="white"/>
+  
+  <!-- Right eye -->
+  <circle cx="65" cy="50" r="5" fill="white"/>
+  <circle cx="67" cy="49" r="3" fill="#1e293b"/>
+  <circle cx="68" cy="48" r="1.5" fill="white"/>
+  
+  <!-- Cute smile -->
+  <path d="M 45 62 Q 52.5 68 60 62" stroke="#1e293b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  
+  <!-- Blush marks -->
+  <ellipse cx="32" cy="58" rx="4" ry="2.5" fill="#ff8fab" opacity="0.6"/>
+  <ellipse cx="73" cy="58" rx="4" ry="2.5" fill="#ff8fab" opacity="0.6"/>
+  
+  <!-- Wheels -->
+  <circle cx="35" cy="90" r="8" fill="#2563EB" stroke="#1e40af" stroke-width="2"/>
+  <circle cx="35" cy="90" r="3" fill="white"/>
+  
+  <circle cx="70" cy="90" r="8" fill="#2563EB" stroke="#1e40af" stroke-width="2"/>
+  <circle cx="70" cy="90" r="3" fill="white"/>
+  
+  <!-- Sparkles for kawaii effect -->
+  <path d="M 15 25 L 17 27 L 15 29 L 13 27 Z" fill="#fbbf24"/>
+  <path d="M 88 30 L 90 32 L 88 34 L 86 32 Z" fill="#fbbf24"/>
+  <path d="M 20 70 L 21 71 L 20 72 L 19 71 Z" fill="#fbbf24"/>
+</svg>

@@ -1,0 +1,204 @@
+name: 🕐 Scrape - Every 12h
+
+on:
+  schedule:
+    # Toutes les 12h : 06h00 et 18h00 UTC (= 08h00 et 20h00 Israel)
+    - cron: '0 6,18 * * *'
+  workflow_dispatch:
+    inputs:
+      ALL_SCRAPERS:
+        description: '✔️ Scraper TOUS les magasins'
+        type: boolean
+        default: true
+      CUSTOM_SCRAPERS:
+        description: '🎯 Magasins spécifiques si non TOUS (ex: COFIX,BAREKET)'
+        type: string
+        default: 'COFIX'
+      ALL_FILE_TYPES:
+        description: '✔️ Tous les types de fichiers'
+        type: boolean
+        default: true
+      CUSTOM_FILE_TYPES:
+        description: '📄 Types spécifiques si non TOUS (ex: STORE_FILE,PRICE_FULL_FILE)'
+        type: string
+        default: 'STORE_FILE,PRICE_FULL_FILE'
+      LIMIT:
+        description: '⚡ Limite de fichiers par magasin (vide = TOUT)'
+        type: string
+        default: ''
+      SCRAPE_ONLY:
+        description: '🔄 Scraper uniquement (sans importer en BDD)'
+        type: boolean
+        default: false
+      IMPORT_ONLY:
+        description: '📥 Importer uniquement (sans scraper de nouveaux fichiers)'
+        type: boolean
+        default: false
+
+# ═══════════════════════════════════════════
+# JOB 1: SCRAPING (télécharge les fichiers XML)
+# ═══════════════════════════════════════════
+jobs:
+  scrape:
+    name: 🌐 Scrape (${{ matrix.scraper }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6h max (limite GitHub absolue)
+    strategy:
+      fail-fast: false
+      max-parallel: 20  # GitHub limite à 20 jobs simultanés
+      matrix:
+        scraper:
+          - BAREKET
+          - YAYNO_BITAN_AND_CARREFOUR
+          - COFIX
+          - CITY_MARKET_KIRYATGAT
+          - CITY_MARKET_SHOPS
+          - DOR_ALON
+          - GOOD_PHARM
+          - HAZI_HINAM
+          - HET_COHEN
+          - KESHET
+          - KING_STORE
+          - MAAYAN_2000
+          - MAHSANI_ASHUK
+          - NETIV_HASED
+          - MESHMAT_YOSEF_1
+          - MESHMAT_YOSEF_2
+          - OSHER_AD
+          - POLIZER
+          - RAMI_LEVY
+          - SALACH_DABACH
+          - SHEFA_BARCART_ASHEM
+          - SHUFERSAL
+          - SHUK_AHIR
+          - STOP_MARKET
+          - SUPER_PHARM
+          - SUPER_YUDA
+          - SUPER_SAPIR
+          - FRESH_MARKET_AND_SUPER_DOSH
+          - QUIK
+          - TIV_TAAM
+          - VICTORY
+          - YELLOW
+          - YOHANANOF
+          - ZOL_VEBEGADOL
+          - WOLT
+
+    steps:
+      - name: 🚫 Skip check
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.IMPORT_ONLY }}" = "true" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "⏭️ IMPORT_ONLY mode: skipping scrape"
+              exit 0
+            fi
+            if [ "${{ inputs.ALL_SCRAPERS }}" != "true" ] && ! echo "${{ inputs.CUSTOM_SCRAPERS }}" | tr ',' '\n' | tr -d ' ' | grep -qx "${{ matrix.scraper }}"; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "⏭️ Skipping ${{ matrix.scraper }} (not in selection)"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: 📥 Checkout code
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔧 Create .env file
+        if: steps.check.outputs.skip != 'true'
+        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+
+      - name: 🔄 Generate Prisma client
+        if: steps.check.outputs.skip != 'true'
+        run: python -m prisma generate
+
+      - name: 🚀 Scrape ${{ matrix.scraper }}
+        if: steps.check.outputs.skip != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ENABLED_SCRAPERS: ${{ matrix.scraper }}
+          NUMBER_OF_PROCESSES: "2"
+          LIMIT: ${{ inputs.LIMIT }}
+        run: |
+          # Appliquer les file types seulement si pas ALL_FILE_TYPES
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.ALL_FILE_TYPES }}" != "true" ]; then
+            export ENABLED_FILE_TYPES="${{ inputs.CUSTOM_FILE_TYPES }}"
+          fi
+          echo "🕐 Démarrage du scraping [${{ matrix.scraper }}]: $(date)"
+          python main.py
+          echo "✅ Scraping terminé [${{ matrix.scraper }}]: $(date)"
+
+# ═══════════════════════════════════════════
+# JOB 2: IMPORT (charge en BDD)
+# Se lance APRÈS que TOUS les scrapes soient terminés
+# ═══════════════════════════════════════════
+  import:
+    name: 🗄️ Import to DB
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6h max
+    needs: scrape # Attend la fin de TOUS les scrapes
+    if: always() # Lance l'import même si certains scrapes ont échoué
+
+    steps:
+      - name: 🚫 Skip check
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.SCRAPE_ONLY }}" = "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⏭️ SCRAPE_ONLY mode: skipping import"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📥 Checkout code
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🔧 Create .env file
+        if: steps.check.outputs.skip != 'true'
+        run: echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+
+      - name: 🔄 Generate Prisma client
+        if: steps.check.outputs.skip != 'true'
+        run: python -m prisma generate
+
+      - name: 🗄️ Import all data to database
+        if: steps.check.outputs.skip != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "📥 Démarrage de l'import complet: $(date)"
+          python import_xml_to_db.py stores promo price --workers 8
+          echo "✅ Import terminé: $(date)"
+
+      - name: 📊 Summary
+        if: always()
+        run: echo "🏁 Pipeline terminé à $(date)"

@@ -1,0 +1,22 @@
+{
+  "id": 14634030,
+  "chainId": "7290058173198",
+  "subChainId": "1",
+  "storeId": "6",
+  "bikoretNo": "7",
+  "priceUpdateDate": "2026-01-07T09:28:00.000Z",
+  "itemCode": "7290110579319",
+  "itemType": "1",
+  "unitQty": "גרם",
+  "quantity": "400",
+  "unitOfMeasure": "100 גרם  ",
+  "bIsWeighted": false,
+  "qtyInPackage": "6.0000",
+  "itemPrice": "11.9",
+  "unitOfMeasurePrice": "11.9000",
+  "allowDiscount": "0",
+  "itemStatus": "1",
+  "itemId": "",
+  "createdAt": "2026-01-08T10:36:29.687Z",
+  "updatedAt": "2026-01-08T11:48:47.059Z"
+}

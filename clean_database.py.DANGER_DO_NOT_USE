@@ -1,0 +1,292 @@
+"""
+Script de nettoyage de la base de données PostgreSQL
+Supprime les données obsolètes et dupliquées pour optimiser l'espace et les performances
+"""
+import asyncio
+from datetime import datetime, timedelta
+from prisma import Prisma
+from collections import defaultdict
+import sys
+
+
+class DatabaseCleaner:
+    def __init__(self):
+        self.db = Prisma()
+        self.stats = {
+            "expired_promotions": 0,
+            "duplicate_prices": 0,
+            "orphaned_products": 0,
+            "old_processed_files": 0,
+            "promotion_items_cleaned": 0,
+            "inactive_products": 0,
+        }
+    
+    async def connect(self):
+        """Connexion à la base de données"""
+        await self.db.connect()
+        print("[✓] Connecté à la base de données PostgreSQL")
+    
+    async def disconnect(self):
+        """Déconnexion de la base de données"""
+        await self.db.disconnect()
+        print("[✓] Déconnecté de la base de données")
+    
+    async def clean_expired_promotions(self):
+        """
+        Supprime les promotions expirées (dont la date de fin est passée)
+        ATTENTION: Ne supprime que les promotions qui ne seront plus actives
+        """
+        print("\n[→] Nettoyage des promotions expirées...")
+        
+        # Date actuelle (convertie en datetime pour Prisma)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Supprimer directement les promotions expirées (delete_many est beaucoup plus rapide)
+        result = await self.db.promotion.delete_many(
+            where={
+                "promotionEndDate": {
+                    "lt": today
+                }
+            }
+        )
+        
+        self.stats["expired_promotions"] = result
+        
+        if result > 0:
+            print(f"[✓] {result} promotions expirées supprimées")
+        else:
+            print("[✓] Aucune promotion expirée trouvée")
+    
+    async def clean_duplicate_prices(self):
+        """
+        Supprime les prix dupliqués pour le même produit dans le même magasin
+        Garde seulement le prix le plus récent
+        """
+        print("\n[→] Nettoyage des prix dupliqués...")
+        
+        # Récupérer tous les prix
+        all_prices = await self.db.price.find_many(
+            order={
+                "priceUpdateDate": "desc"  # Plus récent en premier
+            }
+        )
+        
+        # Grouper par (chainId, storeId, itemCode)
+        price_groups = defaultdict(list)
+        for price in all_prices:
+            key = (price.chainId, price.storeId, price.itemCode)
+            price_groups[key].append(price)
+        
+        # Collecter les IDs à supprimer
+        ids_to_delete = []
+        for key, prices in price_groups.items():
+            if len(prices) > 1:
+                # Garder le premier (le plus récent), supprimer les autres
+                for duplicate_price in prices[1:]:
+                    ids_to_delete.append(duplicate_price.id)
+        
+        # Supprimer tous les doublons en une seule requête
+        if ids_to_delete:
+            result = await self.db.price.delete_many(
+                where={
+                    "id": {
+                        "in": ids_to_delete
+                    }
+                }
+            )
+            self.stats["duplicate_prices"] = result
+            print(f"[✓] {result} prix dupliqués supprimés")
+        else:
+            print("[✓] Aucun prix dupliqué trouvé")
+    
+    async def clean_orphaned_products(self):
+        """
+        Supprime les produits qui n'ont plus de prix ni de promotions
+        (produits qui ne sont plus vendus nulle part)
+        """
+        print("\n[→] Nettoyage des produits orphelins...")
+        
+        # Trouver les produits sans prix et sans promotions
+        all_products = await self.db.product.find_many(
+            include={
+                "prices": True,
+                "promotionItems": True,
+                "cartItems": True  # Ne pas supprimer les produits dans des caddies
+            }
+        )
+        
+        # Collecter les IDs des produits orphelins
+        orphaned_ids = []
+        for product in all_products:
+            # Vérifier si le produit est orphelin (pas de prix, pas de promo, pas dans un caddie)
+            if (len(product.prices) == 0 and 
+                len(product.promotionItems) == 0 and
+                len(product.cartItems) == 0):
+                orphaned_ids.append(product.id)
+        
+        # Supprimer tous les produits orphelins en une seule requête
+        if orphaned_ids:
+            result = await self.db.product.delete_many(
+                where={
+                    "id": {
+                        "in": orphaned_ids
+                    }
+                }
+            )
+            self.stats["orphaned_products"] = result
+            print(f"[✓] {result} produits orphelins supprimés")
+        else:
+            print("[✓] Aucun produit orphelin trouvé")
+    
+    async def clean_old_processed_files(self, days_to_keep=90):
+        """
+        Supprime les anciennes entrées de fichiers traités (plus de X jours)
+        Garde seulement les entrées récentes pour la détection de doublons
+        """
+        print(f"\n[→] Nettoyage des fichiers traités (> {days_to_keep} jours)...")
+        
+        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        
+        # Supprimer les anciennes entrées
+        result = await self.db.processedfile.delete_many(
+            where={
+                "processedAt": {
+                    "lt": cutoff_date
+                }
+            }
+        )
+        
+        self.stats["old_processed_files"] = result
+        
+        if result > 0:
+            print(f"[✓] {result} entrées de fichiers traités supprimées")
+        else:
+            print("[✓] Aucune entrée de fichier traité à supprimer")
+    
+    async def clean_inactive_products_by_store(self):
+        """
+        Supprime les prix de produits marqués comme inactifs (itemStatus != 1)
+        Chaque magasin/chaîne a ses propres produits actifs/inactifs
+        """
+        print("\n[→] Nettoyage des prix de produits inactifs...")
+        
+        # Supprimer directement les prix de produits inactifs
+        result = await self.db.price.delete_many(
+            where={
+                "itemStatus": {
+                    "not": "1"  # itemStatus == "1" signifie actif
+                }
+            }
+        )
+        
+        self.stats["inactive_products"] = result
+        
+        if result > 0:
+            print(f"[✓] {result} prix de produits inactifs supprimés")
+        else:
+            print("[✓] Aucun prix de produit inactif trouvé")
+    
+    async def vacuum_analyze(self):
+        """
+        Exécute VACUUM ANALYZE pour récupérer l'espace et mettre à jour les statistiques
+        (Nécessite une connexion raw SQL)
+        """
+        print("\n[→] Optimisation de la base de données (VACUUM ANALYZE)...")
+        try:
+            # Note: Prisma ne supporte pas directement VACUUM, mais on peut utiliser execute_raw
+            # Cette opération peut prendre du temps sur de grandes tables
+            await self.db.execute_raw("VACUUM ANALYZE;")
+            print("[✓] Base de données optimisée")
+        except Exception as e:
+            print(f"[!] Impossible d'exécuter VACUUM ANALYZE: {e}")
+            print("    Vous pouvez l'exécuter manuellement dans psql")
+    
+    async def print_statistics(self):
+        """Affiche les statistiques de nettoyage"""
+        print("\n" + "="*60)
+        print("STATISTIQUES DE NETTOYAGE")
+        print("="*60)
+        print(f"Promotions expirées supprimées:        {self.stats['expired_promotions']}")
+        print(f"Prix dupliqués supprimés:              {self.stats['duplicate_prices']}")
+        print(f"Produits orphelins supprimés:          {self.stats['orphaned_products']}")
+        print(f"Prix de produits inactifs supprimés:   {self.stats['inactive_products']}")
+        print(f"Fichiers traités supprimés:            {self.stats['old_processed_files']}")
+        print("="*60)
+        
+        total = sum(self.stats.values())
+        print(f"TOTAL D'ENREGISTREMENTS SUPPRIMÉS:     {total}")
+        print("="*60 + "\n")
+        
+        return self.stats
+    
+    async def run_full_cleanup(self, days_to_keep_files=90):
+        """Exécute le nettoyage complet de la base de données"""
+        print("\n" + "="*60)
+        print("DÉMARRAGE DU NETTOYAGE DE LA BASE DE DONNÉES")
+        print("="*60)
+        
+        await self.connect()
+        
+        try:
+            # 1. Nettoyer les promotions expirées
+            await self.clean_expired_promotions()
+            
+            # 2. Nettoyer les prix de produits inactifs
+            await self.clean_inactive_products_by_store()
+            
+            # 3. Nettoyer les prix dupliqués
+            await self.clean_duplicate_prices()
+            
+            # 4. Nettoyer les produits orphelins
+            await self.clean_orphaned_products()
+            
+            # 5. Nettoyer les anciennes entrées de fichiers traités
+            await self.clean_old_processed_files(days_to_keep=days_to_keep_files)
+            
+            # 6. Optimiser la base de données
+            # await self.vacuum_analyze()  # Décommenter si vous avez les droits
+            
+            # Afficher les statistiques
+            stats = await self.print_statistics()
+            
+            return stats
+            
+        except Exception as e:
+            print(f"\n[✗] Erreur pendant le nettoyage: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        
+        finally:
+            await self.disconnect()
+
+
+async def main():
+    """Fonction principale"""
+    cleaner = DatabaseCleaner()
+    
+    # Demander confirmation
+    print("\n⚠️  ATTENTION: Cette opération va supprimer des données de la base.")
+    print("    - Promotions expirées")
+    print("    - Prix dupliqués")
+    print("    - Produits orphelins (sans prix ni promotions)")
+    print("    - Prix de produits inactifs")
+    print("    - Anciennes entrées de fichiers traités (> 90 jours)")
+    
+    response = input("\nVoulez-vous continuer? (oui/non): ").strip().lower()
+    
+    if response in ["oui", "yes", "y", "o"]:
+        stats = await cleaner.run_full_cleanup()
+        if stats:
+            print("\n[✓] Nettoyage terminé avec succès!")
+            return 0
+        else:
+            print("\n[✗] Le nettoyage a échoué")
+            return 1
+    else:
+        print("\n[✗] Nettoyage annulé par l'utilisateur")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

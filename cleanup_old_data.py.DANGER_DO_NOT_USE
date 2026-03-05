@@ -1,0 +1,96 @@
+"""
+Nettoie les données obsolètes (promos expirées + vieux prix)
+"""
+import asyncio
+import os
+from datetime import datetime, timedelta
+from prisma import Prisma
+
+async def cleanup(days_to_keep=7, dry_run=True):
+    db = Prisma()
+    await db.connect()
+    
+    cutoff_date = datetime.now().date() - timedelta(days=days_to_keep)
+    
+    print("\n" + "="*60)
+    print(f"🧹 NETTOYAGE DES DONNÉES (> {days_to_keep} jours)")
+    print("="*60)
+    
+    if dry_run:
+        print("\n⚠️  MODE DRY-RUN - Aucune suppression réelle")
+        print("   Pour supprimer vraiment, lance: python cleanup_old_data.py --execute")
+    else:
+        print("\n⚠️  MODE EXECUTION - Suppressions réelles !")
+    
+    # 1. Promotions expirées (CASCADE supprime aussi promotion_items)
+    expired_promos = await db.promotion.count(
+        where={'promotionEndDate': {'lt': cutoff_date}}
+    )
+    
+    # Calculer les promotion_items qui seront supprimés
+    expired_promo_ids = await db.promotion.find_many(
+        where={'promotionEndDate': {'lt': cutoff_date}},
+        select={'id': True}
+    )
+    promo_ids = [p.id for p in expired_promo_ids]
+    
+    promo_items_to_delete = 0
+    if promo_ids:
+        promo_items_to_delete = await db.promotionitem.count(
+            where={'promotionId': {'in': promo_ids}}
+        )
+    
+    print(f"\n[PROMOTIONS EXPIRÉES]")
+    print(f"  Avant {cutoff_date}: {expired_promos:,} promotions")
+    print(f"  Promotion items:     {promo_items_to_delete:,} items (suppression CASCADE)")
+    
+    if not dry_run and expired_promos > 0:
+        deleted = await db.promotion.delete_many(
+            where={'promotionEndDate': {'lt': cutoff_date}}
+        )
+        print(f"  ✅ Supprimé: {deleted} promotions")
+    
+    # 2. Vieux prix
+    old_prices = await db.price.count(
+        where={'priceUpdateDate': {'lt': cutoff_date}}
+    )
+    
+    print(f"\n[PRIX OBSOLÈTES]")
+    print(f"  Avant {cutoff_date}: {old_prices:,} prix")
+    
+    if not dry_run and old_prices > 0:
+        deleted = await db.price.delete_many(
+            where={'priceUpdateDate': {'lt': cutoff_date}}
+        )
+        print(f"  ✅ Supprimé: {deleted} prix")
+    
+    # Statistiques finales
+    print(f"\n[RÉSUMÉ]")
+    if dry_run:
+        print(f"  Promotions à supprimer:     {expired_promos:,}")
+        print(f"  Promotion items supprimés:  {promo_items_to_delete:,}")
+        print(f"  Prix à supprimer:           {old_prices:,}")
+        print(f"\n  💡 Total économisé: {expired_promos + promo_items_to_delete + old_prices:,} rows")
+    else:
+        remaining_promos = await db.promotion.count()
+        remaining_items = await db.promotionitem.count()
+        remaining_prices = await db.price.count()
+        
+        print(f"  Promotions restantes:      {remaining_promos:,}")
+        print(f"  Promotion items restants:  {remaining_items:,}")
+        print(f"  Prix restants:             {remaining_prices:,}")
+    
+    await db.disconnect()
+
+if __name__ == "__main__":
+    import sys
+    
+    # Par défaut: dry-run avec 7 jours
+    dry_run = "--execute" not in sys.argv
+    days = 7
+    
+    if "--days" in sys.argv:
+        idx = sys.argv.index("--days")
+        days = int(sys.argv[idx + 1])
+    
+    asyncio.run(cleanup(days_to_keep=days, dry_run=dry_run))

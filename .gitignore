@@ -1,0 +1,103 @@
+# =============================================
+#  Python
+# =============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+env/
+venv/
+.env/
+.venv/
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.pytest_cache/
+*.pyc
+
+# =============================================
+#  Node.js / JavaScript
+# =============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.log
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+.next/
+out/
+
+# =============================================
+#  Variables d'environnement (JAMAIS dans git !)
+# =============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+web-backend/.env
+web-frontend/.env
+
+# Garder les .env.example (documentation)
+!.env.example
+!web-backend/.env.example
+!web-frontend/.env.example
+
+# =============================================
+#  Données / fichiers temporaires
+# =============================================
+dumps/*
+!dumps/.gitkeep
+database/*
+!database/.gitkeep
+logging.log
+*.log
+outputs/*
+!outputs/.gitkeep
+status/
+temp*/
+.cache/
+
+# =============================================
+#  Cookies / sessions (sensibles)
+# =============================================
+*_cookies.txt
+
+# =============================================
+#  IDE et éditeurs
+# =============================================
+.vscode/settings.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# =============================================
+#  Prisma
+# =============================================
+# NE PAS ignorer schema.prisma ni les migrations !
+# Ignorer seulement les clients générés locaux
+web/node_modules/
+
+# =============================================
+#  Divers
+# =============================================
+test_dump
+*.local
+stress_test_results.json
+build_output.txt
+lint-output.txt
