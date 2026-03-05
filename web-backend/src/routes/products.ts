@@ -103,22 +103,19 @@ router.get('/search', async (req, res) => {
       itemName: { contains: term, mode: 'insensitive' as const },
     }));
 
-    const products = await prisma.product.findMany({
-      where: { AND: searchConditions },
+    // Première requête : produits avec prix dans la ville (résultats idéaux)
+    const productsWithCityPrices = city ? await prisma.product.findMany({
+      where: {
+        AND: [
+          ...searchConditions,
+          { prices: { some: { store: { city: city as string } } } }
+        ]
+      },
       include: {
         prices: {
-          where: city ? { store: { city: city as string } } : undefined,
+          where: { store: { city: city as string } },
           include: {
-            store: {
-              select: {
-                id: true,
-                chainId: true,
-                storeId: true,
-                chainName: true,
-                storeName: true,
-                city: true,
-              },
-            },
+            store: { select: { id: true, chainId: true, storeId: true, chainName: true, storeName: true, city: true } },
           },
           orderBy: { priceUpdateDate: 'desc' },
         },
@@ -126,16 +123,7 @@ router.get('/search', async (req, res) => {
           include: {
             promotion: {
               include: {
-                store: {
-                  select: {
-                    id: true,
-                    chainId: true,
-                    storeId: true,
-                    chainName: true,
-                    storeName: true,
-                    city: true,
-                  },
-                },
+                store: { select: { id: true, chainId: true, storeId: true, chainName: true, storeName: true, city: true } },
               },
             },
           },
@@ -143,7 +131,40 @@ router.get('/search', async (req, res) => {
       },
       take: Math.min(limitNum * 5, 200),
       orderBy: { itemName: 'asc' },
-    });
+    }) : [];
+
+    // Fallback : si pas assez de résultats avec la ville, on cherche sans filtre ville
+    const needsFallback = !city || productsWithCityPrices.length < limitNum;
+    const fallbackProducts = needsFallback ? await prisma.product.findMany({
+      where: { AND: searchConditions },
+      include: {
+        prices: {
+          include: {
+            store: { select: { id: true, chainId: true, storeId: true, chainName: true, storeName: true, city: true } },
+          },
+          orderBy: { priceUpdateDate: 'desc' },
+          take: 20,
+        },
+        promotionItems: {
+          include: {
+            promotion: {
+              include: {
+                store: { select: { id: true, chainId: true, storeId: true, chainName: true, storeName: true, city: true } },
+              },
+            },
+          },
+        },
+      },
+      take: Math.min(limitNum * 5, 200),
+      orderBy: { itemName: 'asc' },
+    }) : [];
+
+    // Fusionne en évitant les doublons (city results first)
+    const cityIds = new Set(productsWithCityPrices.map(p => p.id));
+    const products = [
+      ...productsWithCityPrices,
+      ...fallbackProducts.filter(p => !cityIds.has(p.id))
+    ];
 
     const now = new Date();
     const withActivePromos = products.map(product => ({
@@ -159,10 +180,16 @@ router.get('/search', async (req, res) => {
     }));
 
     const scored = withActivePromos
-      .filter(p => p.prices.length > 0)
       .map(p => ({ ...p, _score: calculateRelevanceScore(p, searchTerms) }))
       .filter(p => p._score > 0)
-      .sort((a, b) => b._score - a._score);
+      .sort((a, b) => {
+        // Priorité aux produits qui ont des prix dans la ville demandée
+        const aHasCityPrice = city ? a.prices.some((pr: any) => pr.store.city === city) : a.prices.length > 0;
+        const bHasCityPrice = city ? b.prices.some((pr: any) => pr.store.city === city) : b.prices.length > 0;
+        if (aHasCityPrice && !bHasCityPrice) return -1;
+        if (!aHasCityPrice && bHasCityPrice) return 1;
+        return b._score - a._score;
+      });
 
     const paginated = scored
       .slice(skip, skip + limitNum)
