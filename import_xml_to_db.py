@@ -775,30 +775,69 @@ class XMLDataImporter:
         # Store: (filename, start_time, file_number)
         self.active_workers[worker_id] = (xml_path.name, file_start_time, self.file_count)
         
+        import_error = None
         try:
-            # Determine file type and record count
+            # ── Snapshot des stats AVANT l'import ──────────────────
+            stats_before = {
+                "stores":     self.stats["stores"]["updated"] + self.stats["stores"]["created"],
+                "promos":     self.stats["promotions"]["updated"] + self.stats["promotions"]["created"],
+                "prices":     self.stats["prices"]["updated"] + self.stats["prices"]["created"],
+            }
+
             file_type = "unknown"
-            record_count = 0
             if filename.startswith("stores") or filename.startswith("storesfull"):
                 file_type = "stores"
                 await self.import_stores(xml_path)
-                record_count = self.stats["stores"]["created"] + self.stats["stores"]["updated"]
             elif filename.startswith("promo") or filename.startswith("promofull"):
                 file_type = "promo"
                 await self.import_promotions(xml_path)
-                record_count = self.stats["promotions"]["created"] + self.stats["promotions"]["updated"]
             elif filename.startswith("price") or filename.startswith("pricefull"):
                 file_type = "price"
                 await self.import_prices(xml_path)
-                record_count = self.stats["prices"]["created"] + self.stats["prices"]["updated"]
             else:
                 print(f"  [!] Unknown file type: {filename}")
                 return
-            
-            # Mark file as processed immediately (just the name)
-            await self.mark_file_as_processed(xml_path.name)
-            self.stats["files"]["processed"] += 1
-            
+
+            # ── Snapshot des stats APRÈS l'import ──────────────────
+            stats_after = {
+                "stores":  self.stats["stores"]["updated"] + self.stats["stores"]["created"],
+                "promos":  self.stats["promotions"]["updated"] + self.stats["promotions"]["created"],
+                "prices":  self.stats["prices"]["updated"] + self.stats["prices"]["created"],
+            }
+
+            records_written = sum(
+                stats_after[k] - stats_before[k] for k in stats_after
+            )
+
+            # ── Marquer comme traité UNIQUEMENT si des données ont été écrites ──
+            # (ou si le fichier était légitimement vide — skipped > 0 indique qu'on l'a parsé)
+            file_had_data = (self.stats["prices"]["skipped"] > 0 or
+                             self.stats["promotions"]["skipped"] > 0 or
+                             self.stats["stores"]["skipped"] > 0 or
+                             records_written > 0)
+
+            if records_written > 0:
+                await self.mark_file_as_processed(xml_path.name)
+                self.stats["files"]["processed"] += 1
+                print(f"  ✅ {xml_path.name} → {records_written} enregistrements écrits → marqué comme traité")
+            elif not file_had_data:
+                # Fichier XML vide ou sans données valides → on le marque quand même
+                # pour éviter de le retenter indéfiniment
+                await self.mark_file_as_processed(xml_path.name)
+                self.stats["files"]["processed"] += 1
+                print(f"  ⚠️  {xml_path.name} → 0 enregistrements (fichier vide?) → marqué comme traité")
+            else:
+                # Des données ont été skippées (erreurs SQL?) mais rien d'écrit
+                # → NE PAS marquer comme traité → sera retenté au prochain run
+                self.stats["files"]["skipped"] += 1
+                print(f"  ❌ {xml_path.name} → 0 enregistrements écrits ({self.stats['prices']['skipped']} erreurs) → NON marqué, sera retenté")
+                sys.stdout.flush()
+
+        except Exception as e:
+            import_error = e
+            print(f"  ❌ Erreur critique sur {xml_path.name}: {e} → NON marqué comme traité")
+            sys.stdout.flush()
+
         finally:
             # Always remove from active workers when done
             if worker_id in self.active_workers:
