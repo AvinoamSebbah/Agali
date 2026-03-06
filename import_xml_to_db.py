@@ -572,11 +572,11 @@ class XMLDataImporter:
                 values.append(
                     f"({esc(p.get('itemCode'))}, {esc(p.get('itemName'))}, "
                     f"{esc(p.get('manufacturerName'))}, {esc(p.get('manufactureCountry'))}, "
-                    f"{esc(p.get('manufacturerItemDescription'))})"
+                    f"{esc(p.get('manufacturerItemDescription'))}, NOW())"
                 )
             
             sql = f"""
-                INSERT INTO products (item_code, item_name, manufacturer_name, manufacture_country, manufacturer_item_description)
+                INSERT INTO products (item_code, item_name, manufacturer_name, manufacture_country, manufacturer_item_description, updated_at)
                 VALUES {', '.join(values)}
                 ON CONFLICT (item_code) DO UPDATE SET
                     item_name = COALESCE(EXCLUDED.item_name, products.item_name),
@@ -674,7 +674,7 @@ class XMLDataImporter:
                 f"{esc(p.get('unitOfMeasure'))}, {esc_bool(p.get('bIsWeighted'))}, "
                 f"{esc(p.get('qtyInPackage'))}, {esc(p.get('itemPrice'))}, "
                 f"{esc(p.get('unitOfMeasurePrice'))}, {esc(p.get('allowDiscount'))}, "
-                f"{esc(p.get('itemStatus'))}, {esc(p.get('itemId'))})"
+                f"{esc(p.get('itemStatus'))}, {esc(p.get('itemId'))}, NOW())"
             )
         
         sql_size = len(', '.join(values))
@@ -686,7 +686,7 @@ class XMLDataImporter:
                 chain_id, sub_chain_id, store_id, bikoret_no, price_update_date,
                 item_code, item_type, unit_qty, quantity, unit_of_measure,
                 b_is_weighted, qty_in_package, item_price, unit_of_measure_price,
-                allow_discount, item_status, item_id
+                allow_discount, item_status, item_id, updated_at
             )
             VALUES {', '.join(values)}
             ON CONFLICT (chain_id, store_id, item_code) DO UPDATE SET
