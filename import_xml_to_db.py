@@ -35,7 +35,7 @@ class XMLDataImporter:
         self.product_cache = set()  # Cache des produits deja verifies
         self.store_cache = set()  # Cache des magasins deja verifies
         self.batch_size = 2000  # Taille des lots pour insertion rapide (augmenté pour speed)
-        self.concurrent_workers = 4  # Number of concurrent file processing tasks
+        self.concurrent_workers = 2  # 2 workers max (évite saturation Supabase free tier)
         self.skip_processed = skip_processed  # Skip already processed files
         self.already_processed = set()  # Set des fichiers déjà traités
         
@@ -554,7 +554,7 @@ class XMLDataImporter:
         if not products_data:
             return
         
-        BATCH_SIZE = 1000
+        BATCH_SIZE = 200  # 200 rows max (Supabase free tier: HTTP payload limit)
         for i in range(0, len(products_data), BATCH_SIZE):
             chunk = products_data[i:i + BATCH_SIZE]
             
@@ -628,8 +628,8 @@ class XMLDataImporter:
             
             batch.append(price_data)
             
-            # Process batch every 1000 items (gros batch = 1 seule requête SQL)
-            if len(batch) >= 1000:
+            # Process batch every 200 items (limite HTTP Supabase free tier)
+            if len(batch) >= 200:
                 await self.process_price_batch(batch)
                 batch = []
         
