@@ -555,8 +555,12 @@ class XMLDataImporter:
             return
         
         BATCH_SIZE = 200  # 200 rows max (Supabase free tier: HTTP payload limit)
+        total_chunks = (len(products_data) + BATCH_SIZE - 1) // BATCH_SIZE
+        print(f"  [PRODUCTS] {len(products_data)} produits à upsert en {total_chunks} batch(es) de {BATCH_SIZE}")
+        import time as _t
         for i in range(0, len(products_data), BATCH_SIZE):
             chunk = products_data[i:i + BATCH_SIZE]
+            batch_num = i // BATCH_SIZE + 1
             
             def esc(v):
                 if v is None:
@@ -581,10 +585,17 @@ class XMLDataImporter:
                     manufacturer_item_description = COALESCE(EXCLUDED.manufacturer_item_description, products.manufacturer_item_description),
                     updated_at = NOW()
             """
+            t0 = _t.time()
             try:
                 await self.db.execute_raw(sql)
+                elapsed = _t.time() - t0
                 self.product_cache.update(p['itemCode'] for p in chunk if p.get('itemCode'))
+                print(f"  [PRODUCTS] Batch {batch_num}/{total_chunks} ✔ {len(chunk)} rows en {elapsed:.1f}s")
+                sys.stdout.flush()
             except Exception as e:
+                elapsed = _t.time() - t0
+                print(f"  [PRODUCTS] Batch {batch_num}/{total_chunks} ❌ ERREUR ({elapsed:.1f}s): {e} → fallback individuel")
+                sys.stdout.flush()
                 # Fallback individuel si batch échoue
                 for p in chunk:
                     try:
@@ -642,6 +653,9 @@ class XMLDataImporter:
         if not batch:
             return
         
+        import time as _t
+        t0 = _t.time()
+        
         def esc(v):
             if v is None:
                 return 'NULL'
@@ -662,6 +676,10 @@ class XMLDataImporter:
                 f"{esc(p.get('unitOfMeasurePrice'))}, {esc(p.get('allowDiscount'))}, "
                 f"{esc(p.get('itemStatus'))}, {esc(p.get('itemId'))})"
             )
+        
+        sql_size = len(', '.join(values))
+        print(f"  [PRICES] SQL batch {len(batch)} rows (~{sql_size//1024}KB)... ")
+        sys.stdout.flush()
         
         sql = f"""
             INSERT INTO prices (
@@ -690,8 +708,14 @@ class XMLDataImporter:
         """
         try:
             await self.db.execute_raw(sql)
+            elapsed = _t.time() - t0
             self.stats["prices"]["updated"] += len(batch)
+            print(f"  [PRICES] ✔ {len(batch)} rows en {elapsed:.1f}s")
+            sys.stdout.flush()
         except Exception as e:
+            elapsed = _t.time() - t0
+            print(f"  [PRICES] ❌ ERREUR ({elapsed:.1f}s): {e} → fallback individuel")
+            sys.stdout.flush()
             # Fallback individuel si le batch SQL échoue
             for price_data in batch:
                 try:
