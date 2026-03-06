@@ -286,128 +286,225 @@ class XMLDataImporter:
                 self.stats["stores"]["skipped"] += 1
     
     async def import_promotions(self, xml_path):
-        """Import promotions from Promo*.xml file"""
+        """Import promotions from Promo*.xml file — BULK SQL version"""
         root = self.parse_xml_file(xml_path)
         if root is None:
             return
-        
+
         chain_id = self.get_text(root, "ChainId")
         sub_chain_id = self.get_text(root, "SubChainId")
         store_id = self.get_text(root, "StoreId")
         bikoret_no = self.get_text(root, "BikoretNo")
-        
-        # Find all promotions
+
+        # Ensure store exists (1 call total)
+        await self.ensure_store_exists(chain_id, store_id)
+
         all_promos = root.findall(".//Promotion")
         total_promos = len(all_promos)
-        
+        if not total_promos:
+            return
+
+        import time as _t
+
+        def esc(v):
+            if v is None:
+                return 'NULL'
+            return "'" + str(v).replace("'", "''") + "'"
+
+        def esc_bool(v):
+            return 'TRUE' if v else 'FALSE'
+
+        def fmt_date(d):
+            if d and hasattr(d, 'strftime'):
+                return d.strftime('%Y-%m-%d')
+            return datetime.now().strftime('%Y-%m-%d')
+
+        def fmt_ts(d):
+            if d and hasattr(d, 'strftime'):
+                return d.strftime('%Y-%m-%d %H:%M:%S')
+            return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # ── Étape 1 : Collecter toutes les promos + leurs items en mémoire ──
+        promos_data = []
+        promo_items_by_promo_id = {}  # promotion_id (string) → list of items
+
         for idx, promo_elem in enumerate(all_promos, 1):
-            # Update worker progress for heartbeat monitoring
             worker_id = id(asyncio.current_task())
             if worker_id in self.active_workers:
                 filename, start_time, file_num = self.active_workers[worker_id][:3]
                 self.active_workers[worker_id] = (filename, start_time, file_num, f"promo {idx}", total_promos)
-            
+
             promotion_id = self.get_text(promo_elem, "PromotionId")
-            
             if not promotion_id:
                 continue
-            
-            promotion_update_date = self.parse_date(self.get_text(promo_elem, "PromotionUpdateDate"))
-            
-            promo_data = {
-                "chainId": chain_id,
-                "subChainId": sub_chain_id,
-                "storeId": store_id,
-                "bikoretNo": bikoret_no,
-                "promotionId": promotion_id,
-                "promotionDescription": self.get_text(promo_elem, "PromotionDescription"),
-                "promotionUpdateDate": promotion_update_date or datetime.now(),
-                "promotionStartDate": self.parse_date(self.get_text(promo_elem, "PromotionStartDate")) or datetime.now(),
-                "promotionStartHour": self.get_text(promo_elem, "PromotionStartHour"),
-                "promotionEndDate": self.parse_date(self.get_text(promo_elem, "PromotionEndDate")) or datetime.now(),
-                "promotionEndHour": self.get_text(promo_elem, "PromotionEndHour"),
-                "rewardType": self.get_text(promo_elem, "RewardType"),
-                "allowMultipleDiscounts": self.get_text(promo_elem, "AllowMultipleDiscounts"),
-                "isWeightedPromo": self.get_text(promo_elem, "IsWeightedPromo") == "1",
-                "additionalIsCoupon": self.get_text(promo_elem, "AdditionalIsCoupon"),
-                "additionalGiftCount": self.get_text(promo_elem, "AdditionalGiftCount"),
-                "additionalIsTotal": self.get_text(promo_elem, "AdditionalIsTotal"),
-                "additionalIsActive": self.get_text(promo_elem, "AdditionalIsActive"),
-                "minQty": self.get_text(promo_elem, "MinQty"),
-                "discountedPrice": self.get_text(promo_elem, "DiscountedPrice"),
-                "discountedPricePerMida": self.get_text(promo_elem, "DiscountedPricePerMida"),
-                "minNoOfItemOfered": self.get_text(promo_elem, "MinNoOfItemOfered"),
-                "weightUnit": self.get_text(promo_elem, "WeightUnit"),
-                "clubId": self.get_text(promo_elem, "ClubId"),
-            }
-            
-            try:
-                # Ensure store exists before creating promotion
-                await self.ensure_store_exists(chain_id, store_id)
-                
-                # Use upsert to handle concurrent writes (multiple workers)
-                promotion = await self.db.promotion.upsert(
-                    where={
-                        "chainId_storeId_promotionId": {
-                            "chainId": chain_id,
-                            "storeId": store_id,
-                            "promotionId": promotion_id,
-                        }
-                    },
-                    data={
-                        "create": promo_data,
-                        "update": promo_data,
-                    },
-                )
-                
-                # Delete old promotion items before adding new ones
-                await self.db.promotionitem.delete_many(
-                    where={"promotionId": promotion.id}
-                )
-                self.stats["promotions"]["updated"] += 1
-                
-                # Get product name from Remarks if available
-                remarks = self.get_text(promo_elem, "Remarks")
-                
-                # Import promotion items - BATCH MODE for speed
-                promo_items = promo_elem.find(".//PromotionItems")
-                if promo_items is not None:
-                    items = promo_items.findall("Item")
-                    
-                    # Batch prepare all promotion items
-                    promotion_items_batch = []
-                    for item_elem in items:
-                        item_code = self.get_text(item_elem, "ItemCode")
-                        if not item_code:
-                            continue
-                        
-                        # Ensure product exists (cached)
-                        if item_code not in self.product_cache:
-                            await self.ensure_product_exists(item_code)
-                        
-                        promotion_items_batch.append({
-                            "promotionId": promotion.id,
-                            "itemCode": item_code,
-                            "itemType": self.get_text(item_elem, "ItemType"),
-                            "isGiftItem": self.get_text(item_elem, "IsGiftItem") == "1",
+
+            promo_update_date = self.parse_date(self.get_text(promo_elem, "PromotionUpdateDate")) or datetime.now()
+            promo_start_date  = self.parse_date(self.get_text(promo_elem, "PromotionStartDate"))  or datetime.now()
+            promo_end_date    = self.parse_date(self.get_text(promo_elem, "PromotionEndDate"))    or datetime.now()
+
+            promos_data.append({
+                "chain_id":                    chain_id,
+                "sub_chain_id":                sub_chain_id,
+                "store_id":                    store_id,
+                "bikoret_no":                  bikoret_no,
+                "promotion_id":                promotion_id,
+                "promotion_description":       self.get_text(promo_elem, "PromotionDescription"),
+                "promotion_update_date":       fmt_ts(promo_update_date),
+                "promotion_start_date":        fmt_date(promo_start_date),
+                "promotion_end_date":          fmt_date(promo_end_date),
+                "promotion_start_hour":        self.get_text(promo_elem, "PromotionStartHour"),
+                "promotion_end_hour":          self.get_text(promo_elem, "PromotionEndHour"),
+                "reward_type":                 self.get_text(promo_elem, "RewardType"),
+                "allow_multiple_discounts":    self.get_text(promo_elem, "AllowMultipleDiscounts"),
+                "is_weighted_promo":           self.get_text(promo_elem, "IsWeightedPromo") == "1",
+                "additional_is_coupon":        self.get_text(promo_elem, "AdditionalIsCoupon"),
+                "additional_gift_count":       self.get_text(promo_elem, "AdditionalGiftCount"),
+                "additional_is_total":         self.get_text(promo_elem, "AdditionalIsTotal"),
+                "additional_is_active":        self.get_text(promo_elem, "AdditionalIsActive"),
+                "min_qty":                     self.get_text(promo_elem, "MinQty"),
+                "discounted_price":            self.get_text(promo_elem, "DiscountedPrice"),
+                "discounted_price_per_mida":   self.get_text(promo_elem, "DiscountedPricePerMida"),
+                "min_no_of_item_ofered":       self.get_text(promo_elem, "MinNoOfItemOfered"),
+                "weight_unit":                 self.get_text(promo_elem, "WeightUnit"),
+                "club_id":                     self.get_text(promo_elem, "ClubId"),
+            })
+
+            # Collecter les items de cette promo
+            promo_items_elem = promo_elem.find(".//PromotionItems")
+            if promo_items_elem is not None:
+                items = []
+                for item_elem in promo_items_elem.findall("Item"):
+                    item_code = self.get_text(item_elem, "ItemCode")
+                    if item_code:
+                        items.append({
+                            "item_code": item_code,
+                            "item_type": self.get_text(item_elem, "ItemType"),
+                            "is_gift_item": self.get_text(item_elem, "IsGiftItem") == "1",
                         })
-                    
-                    # Batch insert promotion items in smaller chunks to avoid timeouts
-                    if promotion_items_batch:
-                        chunk_size = 500  # Process 500 items at a time
-                        for i in range(0, len(promotion_items_batch), chunk_size):
-                            chunk = promotion_items_batch[i:i + chunk_size]
-                            try:
-                                await self.db.promotionitem.create_many(
-                                    data=chunk,
-                                    skip_duplicates=True
-                                )
-                            except Exception:
-                                pass  # Ignore errors (duplicates etc)
-            
+                if items:
+                    promo_items_by_promo_id[promotion_id] = items
+
+        print(f"  [PROMOS] {len(promos_data)} promotions collectées, {sum(len(v) for v in promo_items_by_promo_id.values())} items")
+        sys.stdout.flush()
+
+        # ── Étape 2 : Bulk upsert toutes les promos + récupérer leurs IDs ──
+        BATCH = 100
+        promo_db_ids = {}  # promotion_id (string) → db id (int)
+
+        for i in range(0, len(promos_data), BATCH):
+            chunk = promos_data[i:i + BATCH]
+            values = []
+            for p in chunk:
+                values.append(
+                    f"({esc(p['chain_id'])}, {esc(p['sub_chain_id'])}, {esc(p['store_id'])}, "
+                    f"{esc(p['bikoret_no'])}, {esc(p['promotion_id'])}, "
+                    f"{esc(p['promotion_description'])}, "
+                    f"{esc(p['promotion_update_date'])}::timestamp, "
+                    f"{esc(p['promotion_start_date'])}::date, {esc(p['promotion_start_hour'])}, "
+                    f"{esc(p['promotion_end_date'])}::date, {esc(p['promotion_end_hour'])}, "
+                    f"{esc(p['reward_type'])}, {esc(p['allow_multiple_discounts'])}, "
+                    f"{esc_bool(p['is_weighted_promo'])}, "
+                    f"{esc(p['additional_is_coupon'])}, {esc(p['additional_gift_count'])}, "
+                    f"{esc(p['additional_is_total'])}, {esc(p['additional_is_active'])}, "
+                    f"{esc(p['min_qty'])}, {esc(p['discounted_price'])}, "
+                    f"{esc(p['discounted_price_per_mida'])}, {esc(p['min_no_of_item_ofered'])}, "
+                    f"{esc(p['weight_unit'])}, {esc(p['club_id'])}, NOW())"
+                )
+
+            sql = f"""
+                INSERT INTO promotions (
+                    chain_id, sub_chain_id, store_id, bikoret_no, promotion_id,
+                    promotion_description, promotion_update_date,
+                    promotion_start_date, promotion_start_hour,
+                    promotion_end_date, promotion_end_hour,
+                    reward_type, allow_multiple_discounts, is_weighted_promo,
+                    additional_is_coupon, additional_gift_count,
+                    additional_is_total, additional_is_active,
+                    min_qty, discounted_price, discounted_price_per_mida,
+                    min_no_of_item_ofered, weight_unit, club_id, updated_at
+                )
+                VALUES {', '.join(values)}
+                ON CONFLICT (chain_id, store_id, promotion_id) DO UPDATE SET
+                    promotion_description = EXCLUDED.promotion_description,
+                    promotion_update_date = EXCLUDED.promotion_update_date,
+                    promotion_start_date = EXCLUDED.promotion_start_date,
+                    promotion_end_date = EXCLUDED.promotion_end_date,
+                    reward_type = EXCLUDED.reward_type,
+                    updated_at = NOW()
+                RETURNING id, promotion_id
+            """
+            t0 = _t.time()
+            try:
+                rows = await self.db.query_raw(sql)
+                elapsed = _t.time() - t0
+                for row in rows:
+                    promo_db_ids[row['promotion_id']] = row['id']
+                self.stats["promotions"]["updated"] += len(chunk)
+                print(f"  [PROMOS] Batch {i//BATCH+1} ✔ {len(chunk)} promos en {elapsed:.1f}s")
+                sys.stdout.flush()
             except Exception as e:
-                print(f"[-] Error importing promotion {chain_id}/{store_id}/{promotion_id}: {e}")
-                self.stats["promotions"]["skipped"] += 1
+                elapsed = _t.time() - t0
+                print(f"  [PROMOS] Batch {i//BATCH+1} ❌ ({elapsed:.1f}s): {e}")
+                sys.stdout.flush()
+                self.stats["promotions"]["skipped"] += len(chunk)
+
+        if not promo_db_ids:
+            return
+
+        # ── Étape 3 : Supprimer les anciens items + insérer les nouveaux ──
+        db_ids = list(promo_db_ids.values())
+
+        # Supprimer tous les vieux items en 1 seule requête
+        ids_str = ', '.join(str(i) for i in db_ids)
+        t0 = _t.time()
+        await self.db.execute_raw(f"DELETE FROM promotion_items WHERE promotion_id IN ({ids_str})")
+        print(f"  [ITEMS] Suppression anciens items en {_t.time()-t0:.1f}s")
+
+        # Collecter tous les item_codes à créer d'abord dans products
+        all_item_codes = set()
+        for items in promo_items_by_promo_id.values():
+            for item in items:
+                if item['item_code'] not in self.product_cache:
+                    all_item_codes.add(item['item_code'])
+
+        if all_item_codes:
+            # Bulk ensure products exist
+            codes_list = list(all_item_codes)
+            for i in range(0, len(codes_list), 500):
+                chunk = codes_list[i:i+500]
+                vals = ', '.join(f"({esc(c)}, NOW())" for c in chunk)
+                await self.db.execute_raw(
+                    f"INSERT INTO products (item_code, updated_at) VALUES {vals} ON CONFLICT (item_code) DO NOTHING"
+                )
+                self.product_cache.update(chunk)
+
+        # Insérer tous les nouveaux items en bulk
+        all_items_batch = []
+        for promo_str_id, items in promo_items_by_promo_id.items():
+            db_id = promo_db_ids.get(promo_str_id)
+            if db_id is None:
+                continue
+            for item in items:
+                all_items_batch.append(
+                    f"({db_id}, {esc(item['item_code'])}, {esc(item['item_type'])}, {esc_bool(item['is_gift_item'])})"
+                )
+
+        if all_items_batch:
+            ITEM_BATCH = 500
+            for i in range(0, len(all_items_batch), ITEM_BATCH):
+                chunk = all_items_batch[i:i+ITEM_BATCH]
+                t0 = _t.time()
+                try:
+                    await self.db.execute_raw(f"""
+                        INSERT INTO promotion_items (promotion_id, item_code, item_type, is_gift_item)
+                        VALUES {', '.join(chunk)}
+                        ON CONFLICT (promotion_id, item_code) DO NOTHING
+                    """)
+                    print(f"  [ITEMS] ✔ {len(chunk)} items en {_t.time()-t0:.1f}s")
+                except Exception as e:
+                    print(f"  [ITEMS] ❌ {len(chunk)} items: {e}")
+                sys.stdout.flush()
+
     
     async def ensure_product_exists(self, item_code):
         """Ensure product exists in database (with cache)"""
