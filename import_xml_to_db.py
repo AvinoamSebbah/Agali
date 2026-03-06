@@ -204,87 +204,132 @@ class XMLDataImporter:
             return None
     
     async def import_stores(self, xml_path):
-        """Import stores from Stores*.xml file"""
+        """Import stores from Stores*.xml file — BULK SQL version"""
+        import time as _t
         root = self.parse_xml_file(xml_path)
         if root is None:
             return
-        
-        chain_id = self.get_text(root, "ChainId")
+
+        chain_id   = self.get_text(root, "ChainId")
         chain_name = self.get_text(root, "ChainName")
         last_update_date = self.parse_date(self.get_text(root, "LastUpdateDate"))
         last_update_time = self.parse_time(self.get_text(root, "LastUpdateTime"))
-        
-        # Find all stores - support both formats (SubChain/Store and STORES/STORE)
+
+        lud = last_update_date.strftime('%Y-%m-%d') if last_update_date else None
+        lut = last_update_time.strftime('%H:%M:%S') if last_update_time else None
+
+        # Trouver tous les magasins (plusieurs formats XML possibles)
         all_stores = []
-        
-        # Try standard format first (.//SubChain/Store)
         for sub_chain in root.findall(".//SubChain"):
             all_stores.extend(sub_chain.findall(".//Store"))
-        
-        # If no stores found, try uppercase format (.//STORES/STORE for Shufersal)
         if not all_stores:
             for stores_elem in root.findall(".//STORES"):
                 all_stores.extend(stores_elem.findall(".//STORE"))
-        
-        # If still no stores, try direct search for Store or STORE tags
         if not all_stores:
             all_stores = root.findall(".//Store") or root.findall(".//STORE")
-        
-        total_stores = len(all_stores)
-        
+
+        if not all_stores:
+            print(f"  [STORES] Aucun magasin trouvé dans {xml_path.name}")
+            return
+
+        def esc(v):
+            if v is None:
+                return 'NULL'
+            return "'" + str(v).replace("'", "''") + "'"
+
+        # Mettre à jour le heartbeat
+        worker_id = id(asyncio.current_task())
+        if worker_id in self.active_workers:
+            fn, st, fn2 = self.active_workers[worker_id][:3]
+            self.active_workers[worker_id] = (fn, st, fn2, f"store 0", len(all_stores))
+
+        values = []
         for idx, store_elem in enumerate(all_stores, 1):
-            # Update worker progress for heartbeat monitoring
-            worker_id = id(asyncio.current_task())
             if worker_id in self.active_workers:
-                filename, start_time, file_num = self.active_workers[worker_id][:3]
-                self.active_workers[worker_id] = (filename, start_time, file_num, f"store {idx}", total_stores)
-            
+                fn, st, fn2 = self.active_workers[worker_id][:3]
+                self.active_workers[worker_id] = (fn, st, fn2, f"store {idx}", len(all_stores))
+
             store_id = self.get_text(store_elem, "StoreId")
-                
             if not store_id:
                 continue
-                
-            # Base store data (excluding city for updates to preserve manual configuration)
-            store_data_base = {
-                "chainId": chain_id,
-                "chainName": chain_name,
-                "lastUpdateDate": last_update_date,
-                "lastUpdateTime": last_update_time,
-                "storeId": store_id,
-                "bikoretNo": self.get_text(store_elem, "BikoretNo"),
-                "storeType": self.get_text(store_elem, "StoreType"),
-                "storeName": self.get_text(store_elem, "StoreName"),
-                "address": self.get_text(store_elem, "Address"),
-                "zipCode": self.get_text(store_elem, "ZipCode"),
-            }
-            
-            # Full store data with city (only for creation)
-            store_data_with_city = {
-                **store_data_base,
-                "city": self.get_text(store_elem, "City"),
-            }
-            
-            try:
-                # Use upsert to handle concurrent writes and avoid duplicates
-                # Note: city is only set during creation, not during updates (user configured manually)
-                await self.db.store.upsert(
-                    where={
-                        "chainId_storeId": {
-                            "chainId": chain_id,
-                            "storeId": store_id,
-                        }
-                    },
-                    data={
-                        "create": store_data_with_city,
-                        "update": store_data_base,
-                    },
-                )
-                self.stats["stores"]["updated"] += 1
-            
-            except Exception as e:
-                print(f"[-] Error importing store {chain_id}/{store_id}: {e}")
-                self.stats["stores"]["skipped"] += 1
-    
+
+            city       = self.get_text(store_elem, "City")
+            store_name = self.get_text(store_elem, "StoreName")
+            address    = self.get_text(store_elem, "Address")
+            zip_code   = self.get_text(store_elem, "ZipCode")
+            bik        = self.get_text(store_elem, "BikoretNo")
+            stype      = self.get_text(store_elem, "StoreType")
+
+            lud_sql = f"{esc(lud)}::date" if lud else "NULL"
+            lut_sql = f"{esc(lut)}::time" if lut else "NULL"
+
+            values.append(
+                f"({esc(chain_id)}, {esc(chain_name)}, {lud_sql}, {lut_sql}, "
+                f"{esc(store_id)}, {esc(bik)}, {esc(stype)}, {esc(store_name)}, "
+                f"{esc(address)}, {esc(city)}, {esc(zip_code)}, NOW())"
+            )
+
+        if not values:
+            return
+
+        sql = f"""
+            INSERT INTO stores (
+                chain_id, chain_name, last_update_date, last_update_time,
+                store_id, bikoret_no, store_type, store_name,
+                address, city, zip_code, updated_at
+            )
+            VALUES {', '.join(values)}
+            ON CONFLICT (chain_id, store_id) DO UPDATE SET
+                chain_name       = EXCLUDED.chain_name,
+                last_update_date = EXCLUDED.last_update_date,
+                last_update_time = EXCLUDED.last_update_time,
+                bikoret_no       = EXCLUDED.bikoret_no,
+                store_type       = EXCLUDED.store_type,
+                store_name       = EXCLUDED.store_name,
+                address          = EXCLUDED.address,
+                zip_code         = EXCLUDED.zip_code,
+                city             = COALESCE(stores.city, EXCLUDED.city),
+                updated_at       = NOW()
+        """
+        t0 = _t.time()
+        try:
+            await self.db.execute_raw(sql)
+            elapsed = _t.time() - t0
+            self.stats["stores"]["updated"] += len(values)
+            print(f"  [STORES] ✔ {len(values)} magasins en {elapsed:.1f}s")
+            sys.stdout.flush()
+        except Exception as e:
+            elapsed = _t.time() - t0
+            print(f"  [STORES] ❌ Erreur bulk ({elapsed:.1f}s): {e}")
+            print(f"  [STORES] Fallback individuel pour {len(all_stores)} magasins...")
+            sys.stdout.flush()
+            import traceback; traceback.print_exc()
+            # Fallback individuel
+            for store_elem in all_stores:
+                store_id = self.get_text(store_elem, "StoreId")
+                if not store_id:
+                    continue
+                store_data_base = {
+                    "chainId": chain_id, "chainName": chain_name,
+                    "lastUpdateDate": last_update_date, "lastUpdateTime": last_update_time,
+                    "storeId": store_id, "bikoretNo": self.get_text(store_elem, "BikoretNo"),
+                    "storeType": self.get_text(store_elem, "StoreType"),
+                    "storeName": self.get_text(store_elem, "StoreName"),
+                    "address": self.get_text(store_elem, "Address"),
+                    "zipCode": self.get_text(store_elem, "ZipCode"),
+                }
+                store_data_with_city = {**store_data_base, "city": self.get_text(store_elem, "City")}
+                try:
+                    await self.db.store.upsert(
+                        where={"chainId_storeId": {"chainId": chain_id, "storeId": store_id}},
+                        data={"create": store_data_with_city, "update": store_data_base},
+                    )
+                    self.stats["stores"]["updated"] += 1
+                except Exception as e2:
+                    print(f"  [STORES] ❌ Magasin {chain_id}/{store_id}: {e2}")
+                    self.stats["stores"]["skipped"] += 1
+
+
     async def import_promotions(self, xml_path):
         """Import promotions from Promo*.xml file — BULK SQL version"""
         root = self.parse_xml_file(xml_path)
