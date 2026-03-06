@@ -550,20 +550,52 @@ class XMLDataImporter:
             await self.batch_process_prices(chain_id, sub_chain_id, store_id, bikoret_no, prices_to_process)
     
     async def batch_upsert_products(self, products_data):
-        """Batch upsert products for better performance"""
-        for product_data in products_data:
-            try:
-                # Use upsert to avoid duplicates
-                update_data = {k: v for k, v in product_data.items() if v and k != "itemCode"}
-                await self.db.product.upsert(
-                    where={"itemCode": product_data["itemCode"]},
-                    data={
-                        "create": product_data,
-                        "update": update_data if update_data else {},
-                    },
+        """Bulk upsert products via raw SQL — 1 req pour N produits au lieu de N reqs"""
+        if not products_data:
+            return
+        
+        BATCH_SIZE = 1000
+        for i in range(0, len(products_data), BATCH_SIZE):
+            chunk = products_data[i:i + BATCH_SIZE]
+            
+            def esc(v):
+                if v is None:
+                    return 'NULL'
+                return "'" + str(v).replace("'", "''") + "'"
+            
+            values = []
+            for p in chunk:
+                values.append(
+                    f"({esc(p.get('itemCode'))}, {esc(p.get('itemName'))}, "
+                    f"{esc(p.get('manufacturerName'))}, {esc(p.get('manufactureCountry'))}, "
+                    f"{esc(p.get('manufacturerItemDescription'))})"
                 )
+            
+            sql = f"""
+                INSERT INTO products (item_code, item_name, manufacturer_name, manufacture_country, manufacturer_item_description)
+                VALUES {', '.join(values)}
+                ON CONFLICT (item_code) DO UPDATE SET
+                    item_name = COALESCE(EXCLUDED.item_name, products.item_name),
+                    manufacturer_name = COALESCE(EXCLUDED.manufacturer_name, products.manufacturer_name),
+                    manufacture_country = COALESCE(EXCLUDED.manufacture_country, products.manufacture_country),
+                    manufacturer_item_description = COALESCE(EXCLUDED.manufacturer_item_description, products.manufacturer_item_description),
+                    updated_at = NOW()
+            """
+            try:
+                await self.db.execute_raw(sql)
+                self.product_cache.update(p['itemCode'] for p in chunk if p.get('itemCode'))
             except Exception as e:
-                pass  # Ignore errors for batch operations
+                # Fallback individuel si batch échoue
+                for p in chunk:
+                    try:
+                        update_data = {k: v for k, v in p.items() if v and k != 'itemCode'}
+                        await self.db.product.upsert(
+                            where={'itemCode': p['itemCode']},
+                            data={'create': p, 'update': update_data or {}}
+                        )
+                        self.product_cache.add(p['itemCode'])
+                    except Exception:
+                        pass
     
     async def batch_process_prices(self, chain_id, sub_chain_id, store_id, bikoret_no, prices_data):
         """Batch process prices for better performance"""
@@ -596,8 +628,8 @@ class XMLDataImporter:
             
             batch.append(price_data)
             
-            # Process batch every 100 items
-            if len(batch) >= 100:
+            # Process batch every 1000 items (gros batch = 1 seule requête SQL)
+            if len(batch) >= 1000:
                 await self.process_price_batch(batch)
                 batch = []
         
@@ -606,27 +638,76 @@ class XMLDataImporter:
             await self.process_price_batch(batch)
     
     async def process_price_batch(self, batch):
-        """Process a batch of prices"""
-        for price_data in batch:
-            try:
-                # Use upsert with composite unique key (chainId, storeId, itemCode)
-                await self.db.price.upsert(
-                    where={
-                        "chainId_storeId_itemCode": {
-                            "chainId": price_data["chainId"],
-                            "storeId": price_data["storeId"],
-                            "itemCode": price_data["itemCode"],
-                        }
-                    },
-                    data={
-                        "create": price_data,
-                        "update": price_data,
-                    },
-                )
-                self.stats["prices"]["updated"] += 1
-            except Exception as e:
-                # Silently skip errors (produit manquant, etc)
-                self.stats["prices"]["skipped"] += 1
+        """Bulk upsert prices via raw SQL — 1 req pour N prix au lieu de N reqs"""
+        if not batch:
+            return
+        
+        def esc(v):
+            if v is None:
+                return 'NULL'
+            return "'" + str(v).replace("'", "''") + "'"
+        
+        def esc_bool(v):
+            return 'TRUE' if v else 'FALSE'
+        
+        values = []
+        for p in batch:
+            date_str = p['priceUpdateDate'].strftime('%Y-%m-%d %H:%M:%S') if hasattr(p['priceUpdateDate'], 'strftime') else str(p['priceUpdateDate'])
+            values.append(
+                f"({esc(p['chainId'])}, {esc(p.get('subChainId'))}, {esc(p['storeId'])}, "
+                f"{esc(p.get('bikoretNo'))}, {esc(date_str)}::timestamp, {esc(p['itemCode'])}, "
+                f"{esc(p.get('itemType'))}, {esc(p.get('unitQty'))}, {esc(p.get('quantity'))}, "
+                f"{esc(p.get('unitOfMeasure'))}, {esc_bool(p.get('bIsWeighted'))}, "
+                f"{esc(p.get('qtyInPackage'))}, {esc(p.get('itemPrice'))}, "
+                f"{esc(p.get('unitOfMeasurePrice'))}, {esc(p.get('allowDiscount'))}, "
+                f"{esc(p.get('itemStatus'))}, {esc(p.get('itemId'))})"
+            )
+        
+        sql = f"""
+            INSERT INTO prices (
+                chain_id, sub_chain_id, store_id, bikoret_no, price_update_date,
+                item_code, item_type, unit_qty, quantity, unit_of_measure,
+                b_is_weighted, qty_in_package, item_price, unit_of_measure_price,
+                allow_discount, item_status, item_id
+            )
+            VALUES {', '.join(values)}
+            ON CONFLICT (chain_id, store_id, item_code) DO UPDATE SET
+                sub_chain_id = EXCLUDED.sub_chain_id,
+                bikoret_no = EXCLUDED.bikoret_no,
+                price_update_date = EXCLUDED.price_update_date,
+                item_type = EXCLUDED.item_type,
+                unit_qty = EXCLUDED.unit_qty,
+                quantity = EXCLUDED.quantity,
+                unit_of_measure = EXCLUDED.unit_of_measure,
+                b_is_weighted = EXCLUDED.b_is_weighted,
+                qty_in_package = EXCLUDED.qty_in_package,
+                item_price = EXCLUDED.item_price,
+                unit_of_measure_price = EXCLUDED.unit_of_measure_price,
+                allow_discount = EXCLUDED.allow_discount,
+                item_status = EXCLUDED.item_status,
+                item_id = EXCLUDED.item_id,
+                updated_at = NOW()
+        """
+        try:
+            await self.db.execute_raw(sql)
+            self.stats["prices"]["updated"] += len(batch)
+        except Exception as e:
+            # Fallback individuel si le batch SQL échoue
+            for price_data in batch:
+                try:
+                    await self.db.price.upsert(
+                        where={
+                            "chainId_storeId_itemCode": {
+                                "chainId": price_data["chainId"],
+                                "storeId": price_data["storeId"],
+                                "itemCode": price_data["itemCode"],
+                            }
+                        },
+                        data={"create": price_data, "update": price_data},
+                    )
+                    self.stats["prices"]["updated"] += 1
+                except Exception:
+                    self.stats["prices"]["skipped"] += 1
     
     async def update_product_info(self, item_elem, item_code):
         """Update product information from price XML (supports multiple tag variants)"""
