@@ -40,16 +40,8 @@ class SafeDatabaseCleaner:
         """
         print("\n[→] Vérification des barcodes dupliqués (AUCUNE SUPPRESSION)...")
         
-        # Récupérer tous les produits
-        all_products = await self.db.product.find_many(
-            select={
-                "id": True,
-                "itemCode": True,
-                "itemName": True,
-                "manufacturerName": True,
-                "createdAt": True
-            }
-        )
+        # Récupérer tous les produits (Prisma Python ne supporte pas select dans find_many)
+        all_products = await self.db.product.find_many()
         
         # Grouper par barcode (itemCode)
         barcode_groups = defaultdict(list)

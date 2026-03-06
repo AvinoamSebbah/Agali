@@ -155,8 +155,10 @@ jobs:
         if: steps.filters.outputs.should_run == 'true'
         run: python -m prisma generate
 
-      # ── SCRAPING ────────────────────────────────────────────────
-      - name: 🌐 Scrape ${{ matrix.scraper }} / ${{ matrix.file_type }}
+      # ── SCRAPING + IMPORT PROGRESSIF ────────────────────────────
+      # L'import tourne en PARALLÈLE du scraping toutes les 20min
+      # → Même si le job timeout à 6h, les fichiers déjà téléchargés sont importés !
+      - name: 🌐 Scrape + 🗄️ Import progressif ${{ matrix.scraper }} / ${{ matrix.file_type }}
         if: steps.filters.outputs.should_run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -164,31 +166,9 @@ jobs:
           ENABLED_FILE_TYPES: ${{ matrix.file_type }}
           NUMBER_OF_PROCESSES: "1"
           LIMIT: ${{ inputs.limit }}
+          SKIP_IMPORT: ${{ inputs.skip_import }}
         run: |
-          echo "🕐 Scraping [${{ matrix.scraper }}/${{ matrix.file_type }}]: $(date)"
-          python main.py
-          echo "✅ Scraping done: $(date)"
-          echo ""
-          echo "📁 Files downloaded:"
-          find dumps/ -name "*.xml" 2>/dev/null | wc -l | xargs echo "  XML files:"
-          find dumps/ -name "*.gz" 2>/dev/null | wc -l | xargs echo "  GZ files:"
-
-      # ── IMPORT (dans le même job, dumps/ est bien là) ───────────
-      - name: 🗄️ Import to DB
-        if: steps.filters.outputs.should_run == 'true' && inputs.skip_import != true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          # Vérifier si des fichiers XML existent à importer
-          XML_COUNT=$(find dumps/ -name "*.xml" 2>/dev/null | wc -l)
-          if [ "$XML_COUNT" -eq 0 ]; then
-            echo "⏭️ No XML files found, skipping import"
-            exit 0
-          fi
-          
-          echo "📅 Found $XML_COUNT XML files - Starting import: $(date)"
-
-          # Déterminer les types à importer selon le file_type scrapé
+          # Détermine le type d'import selon le file_type
           FILE_TYPE="${{ matrix.file_type }}"
           case "$FILE_TYPE" in
             STORE_FILE)       IMPORT_TYPES="stores" ;;
@@ -199,7 +179,45 @@ jobs:
             *)                IMPORT_TYPES="stores promo price" ;;
           esac
 
-          echo "📋 Import types: $IMPORT_TYPES"
-          # Pas de --stores : chaque job a uniquement ses propres fichiers
-          python import_xml_to_db.py $IMPORT_TYPES --workers 4
-          echo "✅ Import done: $(date)"
+          # ── Lance un import en arrière-plan toutes les 20 minutes ──
+          if [ "$SKIP_IMPORT" != "true" ]; then
+            (
+              while true; do
+                sleep 1200  # 20 minutes
+                XML_COUNT=$(find dumps/ -name "*.xml" 2>/dev/null | wc -l)
+                if [ "$XML_COUNT" -gt 0 ]; then
+                  echo ""
+                  echo "⏰ [$(date)] Import intermédiaire ($XML_COUNT XML files trouvés)..."
+                  python import_xml_to_db.py $IMPORT_TYPES --workers 4 2>&1 | tail -10
+                  echo "✅ Import intermédiaire terminé"
+                fi
+              done
+            ) &
+            IMPORT_BG_PID=$!
+            echo "🔄 Import background PID: $IMPORT_BG_PID"
+          fi
+
+          # ── Scraping principal ─────────────────────────────────────
+          echo "🕐 Scraping [${{ matrix.scraper }}/${{ matrix.file_type }}]: $(date)"
+          python main.py
+          echo "✅ Scraping done: $(date)"
+
+          # ── Arrêter le process background ──────────────────────────
+          if [ "$SKIP_IMPORT" != "true" ] && [ -n "$IMPORT_BG_PID" ]; then
+            kill $IMPORT_BG_PID 2>/dev/null || true
+          fi
+
+          # ── Import final (capture tout ce qui reste) ───────────────
+          if [ "$SKIP_IMPORT" != "true" ]; then
+            XML_COUNT=$(find dumps/ -name "*.xml" 2>/dev/null | wc -l)
+            if [ "$XML_COUNT" -gt 0 ]; then
+              echo ""
+              echo "🗄️ Import final ($XML_COUNT XML files): $(date)"
+              python import_xml_to_db.py $IMPORT_TYPES --workers 4
+              echo "✅ Import final terminé: $(date)"
+            else
+              echo "⏭️ Aucun XML à importer"
+            fi
+          else
+            echo "⏩ Import skippé (skip_import=true)"
+          fi
