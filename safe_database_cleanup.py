@@ -78,9 +78,8 @@ class SafeDatabaseCleaner:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Trouver les promotions expirées PAR MAGASIN
-        stores = await self.db.store.find_many(
-            select={"id": True, "storeName": True, "chainId": True}
-        )
+        # Prisma Python ne supporte pas select dans find_many — on prend tout
+        stores = await self.db.store.find_many()
         
         total_deleted = 0
         
@@ -130,9 +129,8 @@ class SafeDatabaseCleaner:
         print("\n[→] Nettoyage des anciens prix (garde le plus récent par article/magasin)...")
         
         # Récupérer tous les magasins
-        stores = await self.db.store.find_many(
-            select={"id": True, "storeName": True, "chainId": True}
-        )
+        # Prisma Python ne supporte pas select dans find_many — on prend tout
+        stores = await self.db.store.find_many()
         
         total_deleted = 0
         
@@ -143,12 +141,6 @@ class SafeDatabaseCleaner:
             prices = await self.db.price.find_many(
                 where={"storeId": store.id},
                 order={"priceUpdateDate": "desc"},  # Plus récent en premier
-                select={
-                    "id": True,
-                    "itemCode": True,
-                    "priceUpdateDate": True,
-                    "itemPrice": True
-                }
             )
             
             if not prices:
@@ -268,17 +260,9 @@ async def main():
     cleaner = SafeDatabaseCleaner(dry_run=dry_run)
     
     if not dry_run:
-        # Demander confirmation en mode execution
-        print("\n⚠️  ATTENTION: Cette opération va supprimer des données de la base.")
-        print("    - Promotions expirées (date de fin dans le passé)")
-        print("    - Anciens prix (quand un prix plus récent existe)")
-        print("    - AUCUN produit ne sera supprimé !")
-        
-        response = input("\nVoulez-vous continuer? (oui/non): ").strip().lower()
-        
-        if response not in ["oui", "yes", "y", "o"]:
-            print("\n[✗] Nettoyage annulé par l'utilisateur")
-            return 1
+        # En mode CI (GitHub Actions), pas de prompt interactif
+        # La confirmation se fait via le flag --execute dans le workflow
+        print("\n⚠️  MODE EXECUTION — Suppressions réelles activées via --execute")
     
     stats = await cleaner.run_safe_cleanup()
     
